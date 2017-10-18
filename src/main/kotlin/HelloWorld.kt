@@ -1,16 +1,11 @@
 import com.atilika.kuromoji.ipadic.Tokenizer
 import com.opencsv.CSVReader
-import com.opencsv.bean.ColumnPositionMappingStrategy
-import org.deeplearning4j.datasets.iterator.BaseDatasetIterator
-import org.deeplearning4j.datasets.iterator.impl.IrisDataSetIterator
 import org.deeplearning4j.eval.Evaluation
 import org.deeplearning4j.nn.api.OptimizationAlgorithm
-import org.deeplearning4j.nn.conf.MultiLayerConfiguration
 import org.deeplearning4j.nn.conf.NeuralNetConfiguration
 import org.deeplearning4j.nn.conf.Updater
 import org.deeplearning4j.nn.conf.layers.*
 import org.deeplearning4j.nn.multilayer.MultiLayerNetwork
-import org.deeplearning4j.nn.params.DefaultParamInitializer
 import org.deeplearning4j.nn.weights.WeightInit
 import org.deeplearning4j.optimize.api.IterationListener
 import org.deeplearning4j.optimize.listeners.ScoreIterationListener
@@ -18,105 +13,93 @@ import org.nd4j.linalg.activations.Activation
 import org.nd4j.linalg.api.ndarray.INDArray
 import org.nd4j.linalg.dataset.DataSet
 import org.nd4j.linalg.dataset.SplitTestAndTrain
-import org.nd4j.linalg.dataset.api.iterator.DataSetIterator
 import org.nd4j.linalg.factory.Nd4j
 import org.nd4j.linalg.lossfunctions.LossFunctions
 import java.util.*
 import java.io.FileReader
-import com.opencsv.bean.CsvToBeanBuilder
 import org.deeplearning4j.datasets.iterator.impl.ListDataSetIterator
 
-
-/**
- * Created by masaki on 2017/08/27.
- */
-
 fun main(args: Array<String>) {
-    println("Hello, World!")
-
-    val numRows = 2
-    val numColumns = 2
-    val nChannels = 4
-    val outputNum = 4
-    val numSamples = 150
-    val batchSize = 110
+    val outputNum = 6
     val iterations = 10
-    val splitTrainNum = 100
     val seed: Long = 123
-    val listenerFreq = 1
+    val listenerFreq = 20
     val lstmLayerSize = 200
+    val batchSize = 64
+    val numEpochs = 10
 
-    val maxWordNum = 40
+    val maxWordNum = 1000
 
-
-    /**
-     *Set a neural network configuration with multiple layers
-     */
-    println("Load data....")
+    println("===== データ取得 =====")
     val reader = CSVReader(FileReader("data.csv"), ',', '"', 1)
     val lines = reader.readAll()
     val csvX = lines.map { line -> line[0] }
-    val csvY = lines.map { line -> line[1].toFloat() }
+    val csvY = lines.map { line -> line[2].toFloat() }
     println(csvX)
     println(csvY)
 
-    println("形態素解析")
+    println("===== 形態素解析 =====")
     val tokenizer = Tokenizer()
-    val wordToSequence = hashMapOf<String, Int>()
+    val wordSequenceMap = hashMapOf<String, Int>()
     var sequence = 0
-    val wordX:List<List<String>> = csvX.map { x ->
-        tokenizer.tokenize(x).map { attr ->
-            val word = attr.getSurface()
-            if (!wordToSequence.contains(word))
-                wordToSequence.put(word, sequence++)
+    val wordX = csvX.map { x ->
+        tokenizer.tokenize(x).map { info ->
+            val word = info.getSurface()
+            if (!wordSequenceMap.contains(word))
+                wordSequenceMap.put(word, sequence++)
             word
         }
     }
     println(wordX.forEach { v -> println(v) })
-    println(wordToSequence)
+    println(wordSequenceMap)
 
-    val fullX: List<List<Float>> = wordX.map { words -> words.map { word -> wordToSequence.getOrDefault(word, 0).toFloat() } }
-    println(fullX.forEach { v -> println(v) })
+    val sequencesX = wordX.map { x -> x.map { word -> wordSequenceMap.getOrDefault(word, 0).toFloat() } }
+    println(sequencesX.forEach { v -> println(v) })
 
-    println("データ整形")
-    val fillZeroX: List<List<Float>> = fullX.map { words -> words + Collections.nCopies(maxWordNum - words.size, 0.0f) }
+    println("===== データ整形 =====")
+    val fillZeroX = sequencesX.map { x -> x + Collections.nCopies(maxWordNum - x.size, 0.0f) }
     println(fillZeroX.forEach { v -> println(v) })
 
-    println("トレーニング＆テストに分割")
+    println("===== トレーニング＆テストに分割 =====")
     val x: INDArray = Nd4j.create(fillZeroX.map { v -> v.toFloatArray() }.toTypedArray())
     val y: INDArray = Nd4j.create(csvY.map { v ->
         when {
             0 <= v && v < 20 -> {
-                arrayOf(1.0f, 0.0f, 0.0f, 0.0f)
+                arrayOf(1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f)
             } 20 <= v && v < 30 -> {
-                arrayOf(0.0f, 1.0f, 0.0f, 0.0f)
+                // 20代
+                arrayOf(0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f)
             } 30 <= v && v < 40 -> {
-                arrayOf(0.0f, 0.0f, 1.0f, 0.0f)
+                // 30代
+                arrayOf(0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f)
+            } 40 <= v && v < 50 -> {
+                // 40代
+                arrayOf(0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f)
+            } 50 <= v && v < 60 -> {
+                // 50代
+                arrayOf(0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f)
             } else -> {
-                arrayOf(0.0f, 0.0f, 0.0f, 1.0f)
+                // 60以上
+                arrayOf(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f)
             }
         }.toFloatArray()
     }.toTypedArray())
     val dataSet = DataSet(x, y)
-    val trainTest: SplitTestAndTrain = SplitTestAndTrain(dataSet, dataSet)
+    dataSet.shuffle()
+    val trainTest: SplitTestAndTrain = dataSet.splitTestAndTrain(0.8)
 
-
+    println("===== モデル作成 =====")
     val conf = NeuralNetConfiguration.Builder()
             .seed(seed)
             .iterations(iterations)
             .optimizationAlgo(OptimizationAlgorithm.STOCHASTIC_GRADIENT_DESCENT)
             .list()
-            .layer(0, DenseLayer.Builder()
+            .layer(0, GravesLSTM.Builder()
                     .nIn(maxWordNum)
-                    .nOut(1000)
-                    .activation(Activation.RELU)
-                    .weightInit(WeightInit.RELU)
+                    .nOut(lstmLayerSize)
+                    .activation(Activation.TANH)
                     .build())
-            .layer(1, GravesLSTM.Builder().nIn(1000).nOut(lstmLayerSize)
-                    .activation(Activation.TANH).build())
-            .layer(2, GravesLSTM.Builder().nIn(lstmLayerSize).nOut(lstmLayerSize)
-                    .activation(Activation.TANH).build())
-            .layer(3, RnnOutputLayer.Builder(LossFunctions.LossFunction.MCXENT)
+            .layer(1, RnnOutputLayer.Builder(LossFunctions.LossFunction.MCXENT)
                     .nIn(lstmLayerSize)
                     .nOut(outputNum)
                     .weightInit(WeightInit.XAVIER)
@@ -125,85 +108,27 @@ fun main(args: Array<String>) {
                     .build())
             .backprop(true).pretrain(false).build()
 
-    println("Build model....")
     val model: MultiLayerNetwork = MultiLayerNetwork(conf)
     model.init()
     model.setListeners(Arrays.asList(ScoreIterationListener(listenerFreq) as IterationListener))
 
-    println("Train model....")
-    println("Training on " + trainTest.getTrain().labelCounts())
-    model.fit(trainTest.getTrain())
+    println("===== 学習 =====")
+    for (i in 0..numEpochs - 1) {
+        model.fit(trainTest.getTrain())
 
-    println("Evaluate weights....")
-    for(layer in model.getLayers()) {
-        val w: INDArray = layer.getParam(DefaultParamInitializer.WEIGHT_KEY)
-        println("Weights: " + w)
+        val eval = model.evaluate(ListDataSetIterator(trainTest.getTrain().asList(), trainTest.getTrain().asList().size))
+        println(String.format("Epoch %d: Accuracy = %.2f, F1 = %.2f", i, eval.accuracy(), eval.f1()))
     }
 
-    println("Evaluate model....")
-    println("Training on " + trainTest.getTest().labelCounts())
-
+    println("===== 評価 =====")
     val eval = Evaluation(outputNum)
-    val output: INDArray = model.output(trainTest.getTest().getFeatureMatrix())
-    eval.eval(trainTest.getTest().getLabels(), output)
+    for (testDataSet in trainTest.test.asList()) {
+        val output: INDArray = model.output(testDataSet.getFeatureMatrix())
+        eval.eval(testDataSet.labels, output)
+        println("▼▼▼▼▼ メモ ▼▼▼▼▼")
+        println("▲▲▲▲▲ メモ ▲▲▲▲▲")
+        println("テストデータ=" + testDataSet.labels + " 精度=" + output)
+    }
+
     println(eval.stats())
-
-    println("****************Example finished********************")
-
-//    val irisIter: BaseDatasetIterator = IrisDataSetIterator(150, 150)
-//    val iris: DataSet = irisIter.next()
-//    iris.normalizeZeroMeanZeroUnitVariance()
-//    println("Loaded " + iris.labelCounts())
-//    Nd4j.shuffle(iris.getFeatureMatrix(), Random(seed), 1)
-//    Nd4j.shuffle(iris.getLabels(), Random(seed),1)
-//    val trainTest: SplitTestAndTrain = iris.splitTestAndTrain(splitTrainNum, Random(seed))
-//
-//    val conf = NeuralNetConfiguration.Builder()
-//            .seed(seed)
-//            .iterations(iterations)
-//            .optimizationAlgo(OptimizationAlgorithm.STOCHASTIC_GRADIENT_DESCENT)
-//            .list()
-//            .layer(0, DenseLayer.Builder()
-//                    .nIn(nChannels)
-//                    .nOut(1000)
-//                    .activation(Activation.RELU)
-//                    .weightInit(WeightInit.RELU)
-//                    .build())
-//            .layer(1, GravesLSTM.Builder().nIn(1000).nOut(lstmLayerSize)
-//                    .activation(Activation.TANH).build())
-//            .layer(2, GravesLSTM.Builder().nIn(lstmLayerSize).nOut(lstmLayerSize)
-//                    .activation(Activation.TANH).build())
-//            .layer(3, RnnOutputLayer.Builder(LossFunctions.LossFunction.MCXENT)
-//                    .nIn(lstmLayerSize)
-//                    .nOut(outputNum)
-//                    .weightInit(WeightInit.XAVIER)
-//                    .activation(Activation.SOFTMAX)
-//                    .updater(Updater.RMSPROP)
-//                    .build())
-//            .backprop(true).pretrain(false).build()
-//
-//    println("Build model....")
-//    val model: MultiLayerNetwork = MultiLayerNetwork(conf)
-//    model.init()
-//    model.setListeners(Arrays.asList(ScoreIterationListener(listenerFreq) as IterationListener))
-//
-//    println("Train model....")
-//    println("Training on " + trainTest.getTrain().labelCounts())
-//    model.fit(trainTest.getTrain())
-//
-//    println("Evaluate weights....")
-//    for(layer in model.getLayers()) {
-//        val w: INDArray = layer.getParam(DefaultParamInitializer.WEIGHT_KEY)
-//        println("Weights: " + w)
-//    }
-//
-//    println("Evaluate model....")
-//    println("Training on " + trainTest.getTest().labelCounts())
-//
-//    val eval = Evaluation(outputNum)
-//    val output: INDArray = model.output(trainTest.getTest().getFeatureMatrix())
-//    eval.eval(trainTest.getTest().getLabels(), output)
-//    println(eval.stats())
-//
-//    println("****************Example finished********************")
 }
